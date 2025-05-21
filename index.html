@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GitHub Repo Explorer</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f0f2f5;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    .container {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+      width: 100%;
+      max-width: 800px;
+      padding: 2rem;
+    }
+    h2 {
+      text-align: center;
+      margin-bottom: 1rem;
+      color: #1976d2;
+    }
+    .input-group {
+      display: flex;
+      margin-bottom: 1rem;
+      justify-content: center;
+    }
+    input {
+      flex: 1;
+      max-width: 200px;
+      padding: 0.6rem;
+      font-size: 1rem;
+      border: 2px solid #ccc;
+      border-radius: 6px 0 0 6px;
+    }
+    button {
+      background: #1976d2;
+      color: white;
+      border: none;
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      border-radius: 0 6px 6px 0;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+    button:hover {
+      background: #115293;
+    }
+    #error {
+      color: #d32f2f;
+      text-align: center;
+      margin-bottom: 1rem;
+      font-weight: 600;
+    }
+    #repos, #files, #preview {
+      margin-top: 1rem;
+    }
+    #repos h3, #files h3, #preview h3 {
+      color: #1976d2;
+      margin-bottom: 0.6rem;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 0.3rem;
+    }
+    .link-item {
+      display: inline-block;
+      margin-bottom: 0.4rem;
+      color: #1565c0;
+      text-decoration: none;
+      font-weight: 500;
+      border-radius: 5px;
+      padding: 0.3rem 0.6rem;
+      transition: background-color 0.2s ease;
+      cursor: pointer;
+    }
+    .link-item:hover {
+      background-color: #e3f2fd;
+    }
+    #back-btn {
+      margin-bottom: 1rem;
+      padding: 0.4rem 1rem;
+      background-color: #9e9e9e;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .file-entry {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 100%;
+    }
+    .file-entry > .filename {
+      flex-grow: 1;
+    }
+    .download-btn {
+      background-color: #1976d2;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      padding: 0.2rem 0.6rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+      margin-left: 10px;
+      transition: background-color 0.3s ease;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .download-btn:hover {
+      background-color: #115293;
+    }
+    pre {
+      background-color: #f5f5f5;
+      padding: 1rem;
+      border-radius: 8px;
+      max-height: 300px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      font-family: Consolas, monospace;
+    }
+    .loading {
+      text-align: center;
+      color: #666;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>GitHub Repo Explorer</h2>
+    <div class="input-group" id="pin-group">
+      <input type="password" id="pin" placeholder="Enter PIN" />
+      <button onclick="verifyPin()">Access</button>
+    </div>
+    <div id="error"></div>
+
+    <div id="repos"></div>
+    <div id="files"></div>
+    <div id="preview"></div>
+  </div>
+
+<script>
+  // More secure PIN handling - this would ideally be server-side
+  function getHashedPins() {
+    // In a real app, these would be properly hashed and stored securely
+    // This is just for demonstration
+    const pinHashes = {
+      "81dc9bdb52d04dc20036dbd8313ed055": "abd4521", // hash of "1234"
+      "674f3c2c1a8a6f90461e8a66fb5550ba": "abd979"   // hash of "5678"
+    };
+    return pinHashes;
+  }
+
+  // Simple MD5 hash function for demonstration
+  function md5(string) {
+    function rotateLeft(value, shift) {
+      return (value << shift) | (value >>> (32 - shift));
+    }
+    
+    function utf8Encode(string) {
+      string = string.replace(/\r\n/g, "\n");
+      let utftext = "";
+      for (let n = 0; n < string.length; n++) {
+        const c = string.charCodeAt(n);
+        if (c < 128) {
+          utftext += String.fromCharCode(c);
+        } else if ((c > 127) && (c < 2048)) {
+          utftext += String.fromCharCode((c >> 6) | 192);
+          utftext += String.fromCharCode((c & 63) | 128);
+        } else {
+          utftext += String.fromCharCode((c >> 12) | 224);
+          utftext += String.fromCharCode(((c >> 6) & 63) | 128);
+          utftext += String.fromCharCode((c & 63) | 128);
+        }
+      }
+      return utftext;
+    }
+    
+    let x = [];
+    let k, AA, BB, CC, DD, a, b, c, d;
+    const S11 = 7, S12 = 12, S13 = 17, S14 = 22;
+    const S21 = 5, S22 = 9, S23 = 14, S24 = 20;
+    const S31 = 4, S32 = 11, S33 = 16, S34 = 23;
+    const S41 = 6, S42 = 10, S43 = 15, S44 = 21;
+    
+    string = utf8Encode(string);
+    
+    x = [];
+    for (let i = 0, len = string.length * 8; i < len; i += 8) {
+      x[i >> 5] |= (string.charCodeAt(i / 8) & 255) << (i % 32);
+    }
+    
+    const len = string.length * 8;
+    x[len >> 5] |= 0x80 << (len % 32);
+    x[(((len + 64) >>> 9) << 4) + 14] = len;
+    
+    a = 0x67452301;
+    b = 0xEFCDAB89;
+    c = 0x98BADCFE;
+    d = 0x10325476;
+    
+    for (let i = 0; i < x.length; i += 16) {
+      AA = a;
+      BB = b;
+      CC = c;
+      DD = d;
+      
+      a = FF(a, b, c, d, x[i], S11, 0xD76AA478);
+      d = FF(d, a, b, c, x[i + 1], S12, 0xE8C7B756);
+      c = FF(c, d, a, b, x[i + 2], S13, 0x242070DB);
+      b = FF(b, c, d, a, x[i + 3], S14, 0xC1BDCEEE);
+      a = FF(a, b, c, d, x[i + 4], S11, 0xF57C0FAF);
+      d = FF(d, a, b, c, x[i + 5], S12, 0x4787C62A);
+      c = FF(c, d, a, b, x[i + 6], S13, 0xA8304613);
+      b = FF(b, c, d, a, x[i + 7], S14, 0xFD469501);
+      a = FF(a, b, c, d, x[i + 8], S11, 0x698098D8);
+      d = FF(d, a, b, c, x[i + 9], S12, 0x8B44F7AF);
+      c = FF(c, d, a, b, x[i + 10], S13, 0xFFFF5BB1);
+      b = FF(b, c, d, a, x[i + 11], S14, 0x895CD7BE);
+      a = FF(a, b, c, d, x[i + 12], S11, 0x6B901122);
+      d = FF(d, a, b, c, x[i + 13], S12, 0xFD987193);
+      c = FF(c, d, a, b, x[i + 14], S13, 0xA679438E);
+      b = FF(b, c, d, a, x[i + 15], S14, 0x49B40821);
+      
+      a = GG(a, b, c, d, x[i + 1], S21, 0xF61E2562);
+      d = GG(d, a, b, c, x[i + 6], S22, 0xC040B340);
+      c = GG(c, d, a, b, x[i + 11], S23, 0x265E5A51);
+      b = GG(b, c, d, a, x[i], S24, 0xE9B6C7AA);
+      a = GG(a, b, c, d, x[i + 5], S21, 0xD62F105D);
+      d = GG(d, a, b, c, x[i + 10], S22, 0x2441453);
+      c = GG(c, d, a, b, x[i + 15], S23, 0xD8A1E681);
+      b = GG(b, c, d, a, x[i + 4], S24, 0xE7D3FBC8);
+      a = GG(a, b, c, d, x[i + 9], S21, 0x21E1CDE6);
+      d = GG(d, a, b, c, x[i + 14], S22, 0xC33707D6);
+      c = GG(c, d, a, b, x[i + 3], S23, 0xF4D50D87);
+      b = GG(b, c, d, a, x[i + 8], S24, 0x455A14ED);
+      a = GG(a, b, c, d, x[i + 13], S21, 0xA9E3E905);
+      d = GG(d, a, b, c, x[i + 2], S22, 0xFCEFA3F8);
+      c = GG(c, d, a, b, x[i + 7], S23, 0x676F02D9);
+      b = GG(b, c, d, a, x[i + 12], S24, 0x8D2A4C8A);
+      
+      a = HH(a, b, c, d, x[i + 5], S31, 0xFFFA3942);
+      d = HH(d, a, b, c, x[i + 8], S32, 0x8771F681);
+      c = HH(c, d, a, b, x[i + 11], S33, 0x6D9D6122);
+      b = HH(b, c, d, a, x[i + 14], S34, 0xFDE5380C);
+      a = HH(a, b, c, d, x[i + 1], S31, 0xA4BEEA44);
+      d = HH(d, a, b, c, x[i + 4], S32, 0x4BDECFA9);
+      c = HH(c, d, a, b, x[i + 7], S33, 0xF6BB4B60);
+      b = HH(b, c, d, a, x[i + 10], S34, 0xBEBFBC70);
+      a = HH(a, b, c, d, x[i + 13], S31, 0x289B7EC6);
+      d = HH(d, a, b, c, x[i], S32, 0xEAA127FA);
+      c = HH(c, d, a, b, x[i + 3], S33, 0xD4EF3085);
+      b = HH(b, c, d, a, x[i + 6], S34, 0x4881D05);
+      a = HH(a, b, c, d, x[i + 9], S31, 0xD9D4D039);
+      d = HH(d, a, b, c, x[i + 12], S32, 0xE6DB99E5);
+      c = HH(c, d, a, b, x[i + 15], S33, 0x1FA27CF8);
+      b = HH(b, c, d, a, x[i + 2], S34, 0xC4AC5665);
+      
+      a = II(a, b, c, d, x[i], S41, 0xF4292244);
+      d = II(d, a, b, c, x[i + 7], S42, 0x432AFF97);
+      c = II(c, d, a, b, x[i + 14], S43, 0xAB9423A7);
+      b = II(b, c, d, a, x[i + 5], S44, 0xFC93A039);
+      a = II(a, b, c, d, x[i + 12], S41, 0x655B59C3);
+      d = II(d, a, b, c, x[i + 3], S42, 0x8F0CCC92);
+      c = II(c, d, a, b, x[i + 10], S43, 0xFFEFF47D);
+      b = II(b, c, d, a, x[i + 1], S44, 0x85845DD1);
+      a = II(a, b, c, d, x[i + 8], S41, 0x6FA87E4F);
+      d = II(d, a, b, c, x[i + 15], S42, 0xFE2CE6E0);
+      c = II(c, d, a, b, x[i + 6], S43, 0xA3014314);
+      b = II(b, c, d, a, x[i + 13], S44, 0x4E0811A1);
+      a = II(a, b, c, d, x[i + 4], S41, 0xF7537E82);
+      d = II(d, a, b, c, x[i + 11], S42, 0xBD3AF235);
+      c = II(c, d, a, b, x[i + 2], S43, 0x2AD7D2BB);
+      b = II(b, c, d, a, x[i + 9], S44, 0xEB86D391);
+      
+      a = addUnsigned(a, AA);
+      b = addUnsigned(b, BB);
+      c = addUnsigned(c, CC);
+      d = addUnsigned(d, DD);
+    }
+    
+    const temp = wordToHex(a) + wordToHex(b) + wordToHex(c) + wordToHex(d);
+    return temp.toLowerCase();
+    
+    function FF(a, b, c, d, x, s, ac) {
+      a = addUnsigned(a, addUnsigned(addUnsigned(F(b, c, d), x), ac));
+      return addUnsigned(rotateLeft(a, s), b);
+    }
+    
+    function GG(a, b, c, d, x, s, ac) {
+      a = addUnsigned(a, addUnsigned(addUnsigned(G(b, c, d), x), ac));
+      return addUnsigned(rotateLeft(a, s), b);
+    }
+    
+    function HH(a, b, c, d, x, s, ac) {
+      a = addUnsigned(a, addUnsigned(addUnsigned(H(b, c, d), x), ac));
+      return addUnsigned(rotateLeft(a, s), b);
+    }
+    
+    function II(a, b, c, d, x, s, ac) {
+      a = addUnsigned(a, addUnsigned(addUnsigned(I(b, c, d), x), ac));
+      return addUnsigned(rotateLeft(a, s), b);
+    }
+    
+    function F(x, y, z) {
+      return (x & y) | (~x & z);
+    }
+    
+    function G(x, y, z) {
+      return (x & z) | (y & ~z);
+    }
+    
+    function H(x, y, z) {
+      return x ^ y ^ z;
+    }
+    
+    function I(x, y, z) {
+      return y ^ (x | ~z);
+    }
+    
+    function addUnsigned(lX, lY) {
+      const lX8 = lX & 0x80000000;
+      const lY8 = lY & 0x80000000;
+      const lX4 = lX & 0x40000000;
+      const lY4 = lY & 0x40000000;
+      const lResult = (lX & 0x3FFFFFFF) + (lY & 0x3FFFFFFF);
+      
+      if (lX4 & lY4) {
+        return (lResult ^ 0x80000000 ^ lX8 ^ lY8);
+      }
+      if (lX4 | lY4) {
+        if (lResult & 0x40000000) {
+          return (lResult ^ 0xC0000000 ^ lX8 ^ lY8);
+        } else {
+          return (lResult ^ 0x40000000 ^ lX8 ^ lY8);
+        }
+      } else {
+        return (lResult ^ lX8 ^ lY8);
+      }
+    }
+    
+    function wordToHex(lValue) {
+      let word = "";
+      for (let i = 0; i <= 3; i++) {
+        word += String.fromCharCode((lValue >>> (i * 8)) & 255);
+      }
+      return word.split('').map(c => {
+        const hex = c.charCodeAt(0).toString(16);
+        return hex.length === 1 ? '0' + hex : hex;
+      }).join('');
+    }
+  }
+
+  let currentUser = "";
+  let currentRepo = "";
+  let currentPath = "";
+  let inPreview = false;
+
+  const errorDiv = document.getElementById('error');
+  const reposDiv = document.getElementById('repos');
+  const filesDiv = document.getElementById('files');
+  const previewDiv = document.getElementById('preview');
+  const pinGroup = document.getElementById('pin-group');
+
+  function clearUI() {
+    errorDiv.textContent = "";
+    reposDiv.innerHTML = "";
+    filesDiv.innerHTML = "";
+    previewDiv.innerHTML = "";
+  }
+
+  async function verifyPin() {
+    clearUI();
+    const pin = document.getElementById("pin").value.trim();
+    if (!pin) {
+      errorDiv.textContent = "❌ Please enter a PIN";
+      return;
+    }
+    
+    const hashedPin = md5(pin);
+    const pinHashes = getHashedPins();
+    
+    if (!pinHashes[hashedPin]) {
+      errorDiv.textContent = "❌ Invalid PIN";
+      return;
+    }
+    
+    currentUser = pinHashes[hashedPin];
+    currentRepo = "";
+    currentPath = "";
+    inPreview = false;
+    pinGroup.style.display = "none";
+    await loadRepos();
+  }
+
+  async function loadRepos() {
+    inPreview = false;
+    currentRepo = "";
+    currentPath = "";
+    reposDiv.innerHTML = "<h3>Repositories:</h3>";
+    filesDiv.innerHTML = "";
+    previewDiv.innerHTML = "";
+
+    try {
+      reposDiv.innerHTML += "<p class='loading'>Loading repositories...</p>";
+      const res = await fetch(`https://api.github.com/users/${currentUser}/repos`);
+      if (!res.ok) throw new Error('Failed to fetch repos');
+      const repos = await res.json();
+
+      reposDiv.innerHTML = "<h3>Repositories:</h3>";
+      if (repos.length === 0) {
+        reposDiv.innerHTML += "<p>No repositories found.</p>";
+        return;
+      }
+
+      repos.forEach(repo => {
+        const link = document.createElement('a');
+        link.href = "#";
+        link.className = 'link-item';
+        link.textContent = repo.name;
+        link.onclick = (e) => {
+          e.preventDefault();
+          currentRepo = repo.name;
+          currentPath = "";
+          loadFiles();
+        };
+        reposDiv.appendChild(link);
+      });
+    } catch (err) {
+      errorDiv.textContent = "⚠️ Could not load repositories. " + err.message;
+      reposDiv.innerHTML = "<h3>Repositories:</h3>";
+    }
+  }
+
+  async function loadFiles() {
+    inPreview = false;
+    previewDiv.innerHTML = "";
+    reposDiv.innerHTML = `<h3>Repo: ${currentRepo}</h3>`;
+    filesDiv.innerHTML = "";
+
+    // Back button to repos list
+    const backToReposBtn = document.createElement("button");
+    backToReposBtn.id = "back-btn";
+    backToReposBtn.textContent = "⬅ Back to Repos";
+    backToReposBtn.onclick = () => {
+      currentRepo = "";
+      currentPath = "";
+      clearUI();
+      loadRepos();
+    };
+    filesDiv.appendChild(backToReposBtn);
+
+    // Back button to parent directory if inside a folder
+    if (currentPath !== "") {
+      const backBtn = document.createElement("button");
+      backBtn.id = "back-btn";
+      backBtn.style.marginLeft = "10px";
+      backBtn.textContent = "⬅ Back to Parent Folder";
+      backBtn.onclick = () => {
+        const parts = currentPath.split('/');
+        parts.pop();
+        currentPath = parts.join('/');
+        loadFiles();
+      };
+      filesDiv.appendChild(backBtn);
+    }
+
+    try {
+      filesDiv.innerHTML += "<p class='loading'>Loading files...</p>";
+      const apiUrl = `https://api.github.com/repos/${currentUser}/${currentRepo}/contents/${currentPath}`;
+      const res = await fetch(apiUrl);
+      if (!res.ok) throw new Error('Failed to fetch contents');
+      const items = await res.json();
+
+      filesDiv.innerHTML = "";
+      filesDiv.appendChild(backToReposBtn);
+      if (currentPath !== "") {
+        const backBtn = document.createElement("button");
+        backBtn.id = "back-btn";
+        backBtn.style.marginLeft = "10px";
+        backBtn.textContent = "⬅ Back to Parent Folder";
+        backBtn.onclick = () => {
+          const parts = currentPath.split('/');
+          parts.pop();
+          currentPath = parts.join('/');
+          loadFiles();
+        };
+        filesDiv.appendChild(backBtn);
+      }
+
+      if (!Array.isArray(items)) {
+        filesDiv.innerHTML += "<p>No files found.</p>";
+        return;
+      }
+
+      items.forEach(item => {
+        const fileEntry = document.createElement('div');
+        fileEntry.className = 'file-entry';
+
+        const link = document.createElement('a');
+        link.href = "#";
+        link.className = 'link-item filename';
+        link.textContent = item.name;
+        link.onclick = (e) => {
+          e.preventDefault();
+          if (item.type === "dir") {
+            currentPath = currentPath ? `${currentPath}/${item.name}` : item.name;
+            loadFiles();
+          } else if (item.type === "file") {
+            previewFile(item);
+          }
+        };
+        fileEntry.appendChild(link);
+
+        if (item.type === "file") {
+          const downloadBtn = document.createElement("a");
+          downloadBtn.href = item.download_url;
+          downloadBtn.textContent = "Download";
+          downloadBtn.className = "download-btn";
+          downloadBtn.setAttribute('download', item.name);
+          downloadBtn.target = "_blank";
+          fileEntry.appendChild(downloadBtn);
+        }
+
+        filesDiv.appendChild(fileEntry);
+      });
+    } catch (err) {
+      filesDiv.innerHTML = "";
+      filesDiv.appendChild(backToReposBtn);
+      if (currentPath !== "") {
+        const backBtn = document.createElement("button");
+        backBtn.id = "back-btn";
+        backBtn.style.marginLeft = "10px";
+        backBtn.textContent = "⬅ Back to Parent Folder";
+        backBtn.onclick = () => {
+          const parts = currentPath.split('/');
+          parts.pop();
+          currentPath = parts.join('/');
+          loadFiles();
+        };
+        filesDiv.appendChild(backBtn);
+      }
+      filesDiv.innerHTML += "<p>Error loading files: " + err.message + "</p>";
+    }
+  }
+
+  async function previewFile(file) {
+    inPreview = true;
+    previewDiv.innerHTML = "";
+    reposDiv.innerHTML = `<h3>Repo: ${currentRepo}</h3>`;
+    filesDiv.innerHTML = "";
+
+    // Back button to file list
+    const backToFilesBtn = document.createElement("button");
+    backToFilesBtn.id = "back-btn";
+    backToFilesBtn.textContent = "⬅ Back to Files";
+    backToFilesBtn.onclick = () => {
+      inPreview = false;
+      loadFiles();
+    };
+    previewDiv.appendChild(backToFilesBtn);
+
+    previewDiv.innerHTML += `<h3>Preview: ${file.name}</h3>`;
+    previewDiv.innerHTML += "<p class='loading'>Loading file preview...</p>";
+
+    try {
+      const res = await fetch(file.download_url);
+      if (!res.ok) throw new Error('Failed to fetch file');
+
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("text")) {
+        const text = await res.text();
+        previewDiv.innerHTML = "";
+        previewDiv.appendChild(backToFilesBtn);
+        previewDiv.innerHTML += `<h3>Preview: ${file.name}</h3>`;
+        previewDiv.innerHTML += `<pre>${escapeHtml(text)}</pre>`;
+        
+        // Add download button in preview
+        const downloadBtn = document.createElement("a");
+        downloadBtn.href = file.download_url;
+        downloadBtn.textContent = "Download File";
+        downloadBtn.className = "download-btn";
+        downloadBtn.style.marginBottom = "1rem";
+        downloadBtn.setAttribute('download', file.name);
+        downloadBtn.target = "_blank";
+        previewDiv.insertBefore(downloadBtn, previewDiv.querySelector('h3').nextSibling);
+      } else {
+        previewDiv.innerHTML = "";
+        previewDiv.appendChild(backToFilesBtn);
+        previewDiv.innerHTML += `<h3>Preview: ${file.name}</h3>`;
+        previewDiv.innerHTML += `<p>Preview not available for this file type.</p>`;
+        
+        // Add download button for non-text files
+        const downloadBtn = document.createElement("a");
+        downloadBtn.href = file.download_url;
+        downloadBtn.textContent = "Download File";
+        downloadBtn.className = "download-btn";
+        downloadBtn.style.marginBottom = "1rem";
+        downloadBtn.setAttribute('download', file.name);
+        downloadBtn.target = "_blank";
+        previewDiv.insertBefore(downloadBtn, previewDiv.querySelector('h3').nextSibling);
+      }
+    } catch (err) {
+      previewDiv.innerHTML = "";
+      previewDiv.appendChild(backToFilesBtn);
+      previewDiv.innerHTML += `<h3>Preview: ${file.name}</h3>`;
+      previewDiv.innerHTML += `<p>Error loading file preview: ${err.message}</p>`;
+    }
+  }
+
+  // Escape HTML to safely display text content
+  function escapeHtml(text) {
+    return text.replace(/[&<>"']/g, function(m) {
+      return {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[m];
+    });
+  }
+</script>
+</body>
+</html>
